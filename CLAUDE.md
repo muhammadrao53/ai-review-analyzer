@@ -17,5 +17,5 @@
 
 ## Next steps (roadmap)
 1. Switch on real AI: get an API key at console.anthropic.com, set ANTHROPIC_API_KEY in cmd, run `--mode claude`, compare with demo results.
-2. Build a Streamlit web app: upload a CSV, see the results and charts, download the Excel report.
+2. Streamlit web app: DONE in code (`app.py`, run with `streamlit run app.py`). User has not run it yet.
 3. Later projects: no-code automation (n8n), RAG chatbot over course PDFs, agents, deployment.

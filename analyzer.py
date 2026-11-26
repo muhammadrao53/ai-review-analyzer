@@ -86,9 +86,10 @@ def analyze_demo(product: str, rating: int, text: str) -> ReviewAnalysis:
 # ---------------------------------------------------------------------------
 # 2b. Claude mode: the real AI call
 # ---------------------------------------------------------------------------
-def make_claude_analyzer():
+def make_claude_analyzer(api_key=None):
     import anthropic
-    client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from the environment
+    # With no api_key given, reads ANTHROPIC_API_KEY from the environment
+    client = anthropic.Anthropic(api_key=api_key)
 
     def analyze_claude(product: str, rating: int, text: str) -> ReviewAnalysis:
         response = client.messages.parse(

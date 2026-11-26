@@ -55,6 +55,15 @@ python analyzer.py --mode claude
 Expected cost for the 30 sample reviews: a few US cents with Opus, a fraction of a cent if you
 change `MODEL` to `claude-haiku-5-5` at the top of `analyzer.py`.
 
+## Web app version (Streamlit)
+
+The same analyzer as a web page: upload a CSV, see results and charts, download the Excel report.
+```bash
+streamlit run app.py
+```
+Your browser opens at http://localhost:8501. Press Ctrl+C in the terminal to stop it.
+For Claude mode, pick "Claude (real AI)" in the sidebar and paste your API key there.
+
 ## Exercises (do these yourself to learn)
 
 1. Compare demo vs Claude results. Where did keyword rules fail? (Hint: review #26.)

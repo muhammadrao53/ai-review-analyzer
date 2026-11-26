@@ -139,25 +139,26 @@ def make_claude_analyzer(api_key=None):
 # 2c. Gemini mode: real AI with Google's FREE tier (key from aistudio.google.com)
 # ---------------------------------------------------------------------------
 # Preferred model. If your key can't use it, we ask Google which models
-# are available and pick the newest "flash" one (see pick_gemini_model).
+# are available and use the newest "flash" ones (see rank_gemini_models).
 GEMINI_MODEL = "gemini-flash-latest"
 
 
-def pick_gemini_model(client) -> str:
-    """Ask Google which models this API key can use, and choose one."""
+def rank_gemini_models(client) -> list[str]:
+    """Ask Google which models this API key can use, best first."""
     names = [m.name.removeprefix("models/") for m in client.models.list()
              if "generateContent" in (m.supported_actions or [])]
-    if GEMINI_MODEL in names:
-        return GEMINI_MODEL
-    # Prefer plain text "flash" models (skip lite, image, audio, preview...)
-    skip = ["lite", "image", "tts", "live", "audio", "preview", "exp", "latest"]
+    # Only plain text "flash" models (skip image, audio, preview...)
+    skip = ["image", "tts", "live", "audio", "preview", "exp", "latest"]
     flash = [n for n in names if "flash" in n and not any(w in n for w in skip)]
-    candidates = flash or [n for n in names if "flash" in n] or names
-    if not candidates:
-        raise RuntimeError("No Gemini models available for this API key.")
-    # Highest version number wins, e.g. gemini-3.8-flash beats gemini-3.6-flash
+    # Newest version first, e.g. gemini-3.8-flash before gemini-3.6-flash.
+    # Normal flash before "flash-lite" (lite = smaller, used as a backup).
     version = lambda n: [int(x) for x in re.findall(r"\d+", n)]
-    return max(candidates, key=version)
+    flash.sort(key=version, reverse=True)
+    flash.sort(key=lambda n: "lite" in n)
+    ranked = ([GEMINI_MODEL] if GEMINI_MODEL in names else []) + flash
+    if not ranked:
+        raise RuntimeError("No Gemini models available for this API key.")
+    return ranked
 
 
 def make_gemini_analyzer(api_key=None):
@@ -166,21 +167,30 @@ def make_gemini_analyzer(api_key=None):
     from google.genai import errors, types
     # With no api_key given, reads GEMINI_API_KEY from the environment
     client = genai.Client(api_key=api_key)
-    model = pick_gemini_model(client)
-    print(f"Using Gemini model: {model}")
+    models = rank_gemini_models(client)
+    print(f"Using Gemini model: {models[0]}")
 
     def call(prompt: str, config=None):
-        # The free tier allows only a few requests per minute.
-        # If we hit the limit (error 429), wait and try again.
-        for attempt in range(5):
-            try:
-                return client.models.generate_content(
-                    model=model, contents=prompt, config=config)
-            except errors.APIError as e:
-                if e.code != 429 or attempt == 4:
-                    raise
-                print("  Free-tier limit reached, waiting 30 seconds...")
-                time.sleep(30)
+        # Free-tier errors that usually go away if we wait:
+        #   429 = too many requests per minute, 503/500 = Google is busy.
+        # Try each model 3 times; if it stays busy, switch to the next model.
+        while True:
+            model = models[0]
+            for attempt in range(3):
+                try:
+                    return client.models.generate_content(
+                        model=model, contents=prompt, config=config)
+                except errors.APIError as e:
+                    if e.code not in (429, 500, 503):
+                        raise  # a real error, e.g. wrong API key
+                    wait = 30 if e.code == 429 else 10
+                    print(f"  {model}: busy ({e.code}), waiting {wait} seconds...")
+                    time.sleep(wait)
+            if len(models) == 1:
+                raise RuntimeError("Gemini is too busy right now. "
+                                   "Please try again in a few minutes.")
+            models.pop(0)  # give up on this model for the rest of the run
+            print(f"  Switching to model: {models[0]}")
 
     def analyze_gemini(product: str, rating: int, text: str) -> ReviewAnalysis:
         response = call(
@@ -198,7 +208,7 @@ def make_gemini_analyzer(api_key=None):
     def summarize_gemini(df: pd.DataFrame) -> str:
         return call(SUMMARY_PROMPT.format(table=results_table(df))).text
 
-    analyze_gemini.model = model  # so the web app can show which model is used
+    analyze_gemini.models = models  # so the web app can show which model was used
     return analyze_gemini, summarize_gemini
 
 

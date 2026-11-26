@@ -83,7 +83,6 @@ if st.button("🚀 Analyze reviews", type="primary"):
         except Exception as e:  # e.g. wrong key, no internet
             st.error(f"Could not connect to Gemini: {e}")
             st.stop()
-        st.caption(f"Using Gemini model: `{analyze.model}`")
     else:
         analyze, summarize = analyze_demo, write_basic_summary
 
@@ -106,6 +105,8 @@ if st.button("🚀 Analyze reviews", type="primary"):
     st.session_state.tagged = tagged
     st.session_state.summary = summary
     progress.empty()
+    if mode == "gemini":
+        st.caption(f"Gemini model used: `{analyze.models[0]}`")
 
 
 # ---------------------------------------------------------------------------

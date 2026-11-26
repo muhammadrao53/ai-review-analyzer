@@ -3,3 +3,5 @@ openpyxl
 matplotlib
 pydantic
 anthropic
+streamlit
+google-genai

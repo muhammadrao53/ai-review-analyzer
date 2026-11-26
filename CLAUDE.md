@@ -13,9 +13,11 @@
 - Demo mode (keyword rules) has been run successfully on the user's laptop.
 - The user has completed a walkthrough of all 3 parts of the code
   (structured output and prompt, demo rules vs Claude API call, pandas pipeline).
-- Claude mode (`--mode claude`) has NOT been run yet. The user still needs an Anthropic API key.
+- Prefer FREE tools and APIs. Gemini mode (`--mode gemini`, free tier, key from aistudio.google.com,
+  model auto-picked from the models the key can use) is the main real-AI option; Claude mode is kept as an optional paid option.
+- Neither Gemini nor Claude mode has been run yet.
 
 ## Next steps (roadmap)
-1. Switch on real AI: get an API key at console.anthropic.com, set ANTHROPIC_API_KEY in cmd, run `--mode claude`, compare with demo results.
-2. Build a Streamlit web app: upload a CSV, see the results and charts, download the Excel report.
+1. Switch on real AI: free Gemini key, run `--mode gemini` (or app sidebar), compare with demo results.
+2. Streamlit web app: DONE in code (`app.py`, run with `streamlit run app.py`). User has not run it yet.
 3. Later projects: no-code automation (n8n), RAG chatbot over course PDFs, agents, deployment.

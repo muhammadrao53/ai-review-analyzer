@@ -8,12 +8,17 @@ a chart and a short management summary.
 Run in demo mode (free, no API key, simple keyword rules):
     python analyzer.py
 
-Run with real AI (needs ANTHROPIC_API_KEY set):
+Run with free real AI (needs GEMINI_API_KEY set):
+    python analyzer.py --mode gemini
+
+Run with Claude (paid, needs ANTHROPIC_API_KEY set):
     python analyzer.py --mode claude
 """
 
 import argparse
 import os
+import re
+import time
 from typing import Literal
 
 import matplotlib
@@ -84,11 +89,24 @@ def analyze_demo(product: str, rating: int, text: str) -> ReviewAnalysis:
 
 
 # ---------------------------------------------------------------------------
-# 2b. Claude mode: the real AI call
+# 2b. Claude mode: the real AI call (paid)
 # ---------------------------------------------------------------------------
-def make_claude_analyzer():
+SUMMARY_PROMPT = ("Here are analyzed customer reviews:\n\n{table}\n"
+                  "Write a management summary in under 200 words: "
+                  "top 3 problems with evidence, which product needs attention "
+                  "first, and 3 concrete recommended actions. Use markdown.")
+
+
+def results_table(df: pd.DataFrame) -> str:
+    cols = ["product", "rating", "sentiment", "topic", "urgency", "summary"]
+    return df[cols].to_csv(index=False)
+
+
+def make_claude_analyzer(api_key=None):
+    """Returns two functions: analyze(one review) and summarize(all results)."""
     import anthropic
-    client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from the environment
+    # With no api_key given, reads ANTHROPIC_API_KEY from the environment
+    client = anthropic.Anthropic(api_key=api_key)
 
     def analyze_claude(product: str, rating: int, text: str) -> ReviewAnalysis:
         response = client.messages.parse(
@@ -104,24 +122,84 @@ def make_claude_analyzer():
                                   urgency=1, summary="(AI could not analyze)")
         return response.parsed_output
 
-    return analyze_claude, client
+    def summarize_claude(df: pd.DataFrame) -> str:
+        response = client.messages.create(
+            model=MODEL,
+            max_tokens=4000,
+            output_config={"effort": "medium"},
+            messages=[{"role": "user",
+                       "content": SUMMARY_PROMPT.format(table=results_table(df))}],
+        )
+        return "".join(b.text for b in response.content if b.type == "text")
+
+    return analyze_claude, summarize_claude
 
 
-def write_ai_summary(client, df: pd.DataFrame) -> str:
-    """Ask Claude to write a short management summary from the results."""
-    table = df[["product", "rating", "sentiment", "topic", "urgency", "summary"]]
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=4000,
-        output_config={"effort": "medium"},
-        messages=[{"role": "user", "content":
-                   "Here are analyzed customer reviews:\n\n"
-                   + table.to_csv(index=False)
-                   + "\nWrite a management summary in under 200 words: "
-                     "top 3 problems with evidence, which product needs attention "
-                     "first, and 3 concrete recommended actions. Use markdown."}],
-    )
-    return "".join(b.text for b in response.content if b.type == "text")
+# ---------------------------------------------------------------------------
+# 2c. Gemini mode: real AI with Google's FREE tier (key from aistudio.google.com)
+# ---------------------------------------------------------------------------
+# Preferred model. If your key can't use it, we ask Google which models
+# are available and pick the newest "flash" one (see pick_gemini_model).
+GEMINI_MODEL = "gemini-flash-latest"
+
+
+def pick_gemini_model(client) -> str:
+    """Ask Google which models this API key can use, and choose one."""
+    names = [m.name.removeprefix("models/") for m in client.models.list()
+             if "generateContent" in (m.supported_actions or [])]
+    if GEMINI_MODEL in names:
+        return GEMINI_MODEL
+    # Prefer plain text "flash" models (skip lite, image, audio, preview...)
+    skip = ["lite", "image", "tts", "live", "audio", "preview", "exp", "latest"]
+    flash = [n for n in names if "flash" in n and not any(w in n for w in skip)]
+    candidates = flash or [n for n in names if "flash" in n] or names
+    if not candidates:
+        raise RuntimeError("No Gemini models available for this API key.")
+    # Highest version number wins, e.g. gemini-3.8-flash beats gemini-3.6-flash
+    version = lambda n: [int(x) for x in re.findall(r"\d+", n)]
+    return max(candidates, key=version)
+
+
+def make_gemini_analyzer(api_key=None):
+    """Same idea as make_claude_analyzer, but with Google's Gemini."""
+    from google import genai
+    from google.genai import errors, types
+    # With no api_key given, reads GEMINI_API_KEY from the environment
+    client = genai.Client(api_key=api_key)
+    model = pick_gemini_model(client)
+    print(f"Using Gemini model: {model}")
+
+    def call(prompt: str, config=None):
+        # The free tier allows only a few requests per minute.
+        # If we hit the limit (error 429), wait and try again.
+        for attempt in range(5):
+            try:
+                return client.models.generate_content(
+                    model=model, contents=prompt, config=config)
+            except errors.APIError as e:
+                if e.code != 429 or attempt == 4:
+                    raise
+                print("  Free-tier limit reached, waiting 30 seconds...")
+                time.sleep(30)
+
+    def analyze_gemini(product: str, rating: int, text: str) -> ReviewAnalysis:
+        response = call(
+            PROMPT.format(product=product, rating=rating, text=text),
+            types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=ReviewAnalysis,  # forces valid JSON in our shape
+            ),
+        )
+        if response.parsed is None:
+            return ReviewAnalysis(sentiment="neutral", topic="other",
+                                  urgency=1, summary="(AI could not analyze)")
+        return response.parsed
+
+    def summarize_gemini(df: pd.DataFrame) -> str:
+        return call(SUMMARY_PROMPT.format(table=results_table(df))).text
+
+    analyze_gemini.model = model  # so the web app can show which model is used
+    return analyze_gemini, summarize_gemini
 
 
 def write_basic_summary(df: pd.DataFrame) -> str:
@@ -148,19 +226,22 @@ def write_basic_summary(df: pd.DataFrame) -> str:
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=["demo", "claude"], default="demo")
+    parser.add_argument("--mode", choices=["demo", "gemini", "claude"], default="demo")
     args = parser.parse_args()
 
     df = pd.read_csv(INPUT_FILE)
     print(f"Loaded {len(df)} reviews. Mode: {args.mode}")
 
-    client = None
     if args.mode == "claude":
         if not os.environ.get("ANTHROPIC_API_KEY"):
-            raise SystemExit("Set ANTHROPIC_API_KEY first (see README.md, step 4).")
-        analyze, client = make_claude_analyzer()
+            raise SystemExit("Set ANTHROPIC_API_KEY first (see README.md).")
+        analyze, summarize = make_claude_analyzer()
+    elif args.mode == "gemini":
+        if not os.environ.get("GEMINI_API_KEY"):
+            raise SystemExit("Set GEMINI_API_KEY first (see README.md).")
+        analyze, summarize = make_gemini_analyzer()
     else:
-        analyze = analyze_demo
+        analyze, summarize = analyze_demo, write_basic_summary
 
     results = []
     for i, row in enumerate(df.itertuples(), start=1):
@@ -188,7 +269,7 @@ def main():
     plt.savefig(f"{OUTPUT_DIR}/complaints_chart.png", dpi=150)
 
     # Management summary
-    summary = write_ai_summary(client, df) if client else write_basic_summary(df)
+    summary = summarize(df)
     with open(f"{OUTPUT_DIR}/summary.md", "w", encoding="utf-8") as f:
         f.write(summary)
 

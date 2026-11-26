@@ -15,7 +15,7 @@ import pandas as pd
 import streamlit as st
 
 # Reuse the logic we already wrote in analyzer.py (no copy-paste!)
-from analyzer import (GEMINI_MODEL, INPUT_FILE, MODEL, analyze_demo,
+from analyzer import (INPUT_FILE, MODEL, analyze_demo,
                       make_claude_analyzer, make_gemini_analyzer,
                       write_basic_summary)
 
@@ -43,8 +43,9 @@ with st.sidebar:
                                  help="Not saved anywhere. Leave empty to use "
                                       f"{key_name} from your terminal.")
                    or os.environ.get(key_name))
-        st.caption(f"Model: `{GEMINI_MODEL if mode == 'gemini' else MODEL}`")
-        if mode == "gemini":
+        if mode == "claude":
+            st.caption(f"Model: `{MODEL}`")
+        else:
             st.caption("Free key: aistudio.google.com → Get API key. "
                        "Free tier is slow (few requests per minute).")
 
@@ -77,7 +78,12 @@ if st.button("🚀 Analyze reviews", type="primary"):
     if mode == "claude":
         analyze, summarize = make_claude_analyzer(api_key)
     elif mode == "gemini":
-        analyze, summarize = make_gemini_analyzer(api_key)
+        try:
+            analyze, summarize = make_gemini_analyzer(api_key)
+        except Exception as e:  # e.g. wrong key, no internet
+            st.error(f"Could not connect to Gemini: {e}")
+            st.stop()
+        st.caption(f"Using Gemini model: `{analyze.model}`")
     else:
         analyze, summarize = analyze_demo, write_basic_summary
 

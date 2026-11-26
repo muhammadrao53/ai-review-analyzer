@@ -14,7 +14,7 @@
 - The user has completed a walkthrough of all 3 parts of the code
   (structured output and prompt, demo rules vs Claude API call, pandas pipeline).
 - Prefer FREE tools and APIs. Gemini mode (`--mode gemini`, free tier, key from aistudio.google.com,
-  model alias `gemini-flash-latest`) is the main real-AI option; Claude mode is kept as an optional paid option.
+  model auto-picked from the models the key can use) is the main real-AI option; Claude mode is kept as an optional paid option.
 - Neither Gemini nor Claude mode has been run yet.
 
 ## Next steps (roadmap)

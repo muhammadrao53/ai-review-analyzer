@@ -17,6 +17,7 @@ Run with Claude (paid, needs ANTHROPIC_API_KEY set):
 
 import argparse
 import os
+import re
 import time
 from typing import Literal
 
@@ -137,8 +138,26 @@ def make_claude_analyzer(api_key=None):
 # ---------------------------------------------------------------------------
 # 2c. Gemini mode: real AI with Google's FREE tier (key from aistudio.google.com)
 # ---------------------------------------------------------------------------
-# "gemini-flash-latest" always points to Google's current Flash model.
+# Preferred model. If your key can't use it, we ask Google which models
+# are available and pick the newest "flash" one (see pick_gemini_model).
 GEMINI_MODEL = "gemini-flash-latest"
+
+
+def pick_gemini_model(client) -> str:
+    """Ask Google which models this API key can use, and choose one."""
+    names = [m.name.removeprefix("models/") for m in client.models.list()
+             if "generateContent" in (m.supported_actions or [])]
+    if GEMINI_MODEL in names:
+        return GEMINI_MODEL
+    # Prefer plain text "flash" models (skip lite, image, audio, preview...)
+    skip = ["lite", "image", "tts", "live", "audio", "preview", "exp", "latest"]
+    flash = [n for n in names if "flash" in n and not any(w in n for w in skip)]
+    candidates = flash or [n for n in names if "flash" in n] or names
+    if not candidates:
+        raise RuntimeError("No Gemini models available for this API key.")
+    # Highest version number wins, e.g. gemini-3.8-flash beats gemini-3.6-flash
+    version = lambda n: [int(x) for x in re.findall(r"\d+", n)]
+    return max(candidates, key=version)
 
 
 def make_gemini_analyzer(api_key=None):
@@ -147,6 +166,8 @@ def make_gemini_analyzer(api_key=None):
     from google.genai import errors, types
     # With no api_key given, reads GEMINI_API_KEY from the environment
     client = genai.Client(api_key=api_key)
+    model = pick_gemini_model(client)
+    print(f"Using Gemini model: {model}")
 
     def call(prompt: str, config=None):
         # The free tier allows only a few requests per minute.
@@ -154,7 +175,7 @@ def make_gemini_analyzer(api_key=None):
         for attempt in range(5):
             try:
                 return client.models.generate_content(
-                    model=GEMINI_MODEL, contents=prompt, config=config)
+                    model=model, contents=prompt, config=config)
             except errors.APIError as e:
                 if e.code != 429 or attempt == 4:
                     raise
@@ -177,6 +198,7 @@ def make_gemini_analyzer(api_key=None):
     def summarize_gemini(df: pd.DataFrame) -> str:
         return call(SUMMARY_PROMPT.format(table=results_table(df))).text
 
+    analyze_gemini.model = model  # so the web app can show which model is used
     return analyze_gemini, summarize_gemini
 
 

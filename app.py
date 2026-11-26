@@ -15,8 +15,9 @@ import pandas as pd
 import streamlit as st
 
 # Reuse the logic we already wrote in analyzer.py (no copy-paste!)
-from analyzer import (INPUT_FILE, MODEL, analyze_demo, make_claude_analyzer,
-                      write_ai_summary, write_basic_summary)
+from analyzer import (GEMINI_MODEL, INPUT_FILE, MODEL, analyze_demo,
+                      make_claude_analyzer, make_gemini_analyzer,
+                      write_basic_summary)
 
 REQUIRED_COLUMNS = ["review_id", "product", "rating", "review_text"]
 
@@ -31,16 +32,21 @@ st.write("Upload customer reviews and AI tags each one with "
 # ---------------------------------------------------------------------------
 with st.sidebar:
     st.header("Settings")
-    mode = st.radio("Mode", ["demo", "claude"],
+    mode = st.radio("Mode", ["demo", "gemini", "claude"],
                     format_func=lambda m: {"demo": "Demo (free keyword rules)",
-                                           "claude": "Claude (real AI)"}[m])
+                                           "gemini": "Gemini (free real AI)",
+                                           "claude": "Claude (paid real AI)"}[m])
     api_key = None
-    if mode == "claude":
-        api_key = (st.text_input("Anthropic API key", type="password",
+    if mode != "demo":
+        key_name = {"gemini": "GEMINI_API_KEY", "claude": "ANTHROPIC_API_KEY"}[mode]
+        api_key = (st.text_input(f"{mode.title()} API key", type="password",
                                  help="Not saved anywhere. Leave empty to use "
-                                      "ANTHROPIC_API_KEY from your terminal.")
-                   or os.environ.get("ANTHROPIC_API_KEY"))
-        st.caption(f"Model: `{MODEL}`")
+                                      f"{key_name} from your terminal.")
+                   or os.environ.get(key_name))
+        st.caption(f"Model: `{GEMINI_MODEL if mode == 'gemini' else MODEL}`")
+        if mode == "gemini":
+            st.caption("Free key: aistudio.google.com → Get API key. "
+                       "Free tier is slow (few requests per minute).")
 
 
 # ---------------------------------------------------------------------------
@@ -65,14 +71,15 @@ with st.expander("Preview the raw reviews"):
 # 3. Run the analysis when the button is clicked
 # ---------------------------------------------------------------------------
 if st.button("🚀 Analyze reviews", type="primary"):
-    client = None
+    if mode != "demo" and not api_key:
+        st.error("Enter your API key in the sidebar first.")
+        st.stop()
     if mode == "claude":
-        if not api_key:
-            st.error("Enter your API key in the sidebar first.")
-            st.stop()
-        analyze, client = make_claude_analyzer(api_key)
+        analyze, summarize = make_claude_analyzer(api_key)
+    elif mode == "gemini":
+        analyze, summarize = make_gemini_analyzer(api_key)
     else:
-        analyze = analyze_demo
+        analyze, summarize = analyze_demo, write_basic_summary
 
     progress = st.progress(0, text="Starting...")
     results = []
@@ -84,8 +91,7 @@ if st.button("🚀 Analyze reviews", type="primary"):
         tagged = pd.concat([df, pd.DataFrame(results)], axis=1)
         tagged = tagged.sort_values("urgency", ascending=False)
         with st.spinner("Writing the management summary..."):
-            summary = (write_ai_summary(client, tagged) if client
-                       else write_basic_summary(tagged))
+            summary = summarize(tagged)
     except Exception as e:  # e.g. wrong API key, no credit, no internet
         st.error(f"Something went wrong: {e}")
         st.stop()

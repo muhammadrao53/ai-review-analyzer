@@ -33,27 +33,24 @@ pip install -r requirements.txt
 python analyzer.py
 ```
 
-**5. Get a Claude API key** to use real AI:
-- Go to console.anthropic.com, sign up, add a small amount of credit (USD 5 is plenty), and create an API key.
+**5. Get a FREE Gemini API key** to use real AI:
+- Go to aistudio.google.com, sign in with a Google account, click **Get API key**, then **Create API key**. No credit card needed.
 - Never share the key or upload it to GitHub.
+- The free tier allows only a few requests per minute, so a run takes a few minutes. The code waits and retries automatically.
+- Free-tier data may be used by Google to improve its products, so don't upload private customer data.
 
-**6. Set the key in your terminal:**
-
-Windows (PowerShell):
+**6. Set the key in Command Prompt (cmd):**
 ```bash
-$env:ANTHROPIC_API_KEY="sk-ant-..."
+set GEMINI_API_KEY=your-key-here
 ```
-Mac / Linux:
-```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
-```
+(This lasts until you close that cmd window.)
 
 **7. Run with real AI:**
 ```bash
-python analyzer.py --mode claude
+python analyzer.py --mode gemini
 ```
-Expected cost for the 30 sample reviews: a few US cents with Opus, a fraction of a cent if you
-change `MODEL` to `claude-haiku-5-5` at the top of `analyzer.py`.
+
+**Optional: Claude (paid).** Get a key at console.anthropic.com (needs credit), run `set ANTHROPIC_API_KEY=sk-ant-...`, then `python analyzer.py --mode claude`.
 
 ## Web app version (Streamlit)
 
@@ -62,12 +59,12 @@ The same analyzer as a web page: upload a CSV, see results and charts, download 
 streamlit run app.py
 ```
 Your browser opens at http://localhost:8501. Press Ctrl+C in the terminal to stop it.
-For Claude mode, pick "Claude (real AI)" in the sidebar and paste your API key there.
+For real AI, pick "Gemini (free real AI)" in the sidebar and paste your key there (no `set` command needed).
 
 ## Exercises (do these yourself to learn)
 
 1. Compare demo vs Claude results. Where did keyword rules fail? (Hint: review #26.)
 2. Add your own reviews to `data/reviews.csv`, including Roman Urdu ones. Does the AI handle them?
 3. Add a new field to `ReviewAnalysis`, e.g. `customer_wants_refund: bool`, and update the prompt.
-4. Switch `MODEL` to `claude-haiku-5-5`. Is the quality still good enough? That's a real cost/quality decision engineers make.
+4. Change `GEMINI_MODEL` to `gemini-flash-lite-latest` (smaller, faster). Is the quality still good enough? That's a real cost/quality decision engineers make.
 5. Point it at a real dataset, e.g. a product-reviews dataset from Kaggle.
